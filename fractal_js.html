@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<!-- A HTML5/Javascript Fractal drawing program 	-->
+<!-- By Richard Kendall, richard.kendall@gmail.com  -->
+
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>Fractal</title>
+		<script type="text/javascript" src="cn.js"></script>
+		<script type="text/javascript" src="rgb.js"></script>
+		<script type="text/javascript" src="stack.js"></script>
+		<style type="text/css">
+		body {
+			font-family:		Tahoma;
+			font-size:			10pt;
+		}
+		
+		table {
+			font-family:		Tahoma;
+			font-size:			10pt;
+		}
+		</style>
+	</head>
+	<body onload="setup();">
+		<h1>Fractal Drawing...</h1>
+		<p>
+		This page allows you to draw Fractal images associated with complex polynomials (of the form f(z) = z^3-2.0).  
+		They're coloured based on which root is found and how many iterations it takes to get close to that root.  The form to the right of the image allows you to control the 
+		inputs into the drawing algorithm.
+		</p><p>
+		This only works in Firefox, Chrome and Safari (as it requires HTML5 Canvas and Web Worker support.)
+		</p>
+		<div id="warning-message" style="display: none; border-color: #960E0E; border-style: solid; border-width: 1px; padding: 2px; color: #960E0E; background-color: #F09E9E; margin-bottom: 10px;">
+		<b>Warning!</b> this combination of settings leads to excessive memory use in Chrome, on my PC (with 4GB of RAM) this usually leads to the Chrome process crashing (the 'Aw Snap!' message.)
+		</div>
+		<table style="border-width: 0px; width: 100%;">
+			<tr>
+				<td style="width: 520px; vertical-align:top;">
+					<canvas id="cvs" width="768" height="768" style="vertical-align: top; display: none;"></canvas>
+					<img style="padding: 242.5px;" width="25" height="25" id="display_img" src="rendering.gif" alt="fractal drawing area" />
+				</td>
+				<td style="vertical-align: top;">
+					<table style="border-width: 0px; width: 600px;">
+						<tr>
+							<td style="width: 150px;"><b>Complex Plane</b></td>
+							<td>
+								<b>R</b><sub>min</sub><input type="text" id="v_min_x" value="-2.0" size="2"/>&nbsp;
+								<b>R</b><sub>max</sub><input type="text" id="v_max_x" value="2.0" size="2"/>&nbsp;
+								<b>I</b><sub>min</sub><input type="text" id="v_min_y" value="-2.0" size="2"/>&nbsp;
+								<b>I</b><sub>max</sub><input type="text" id="v_max_y" value="2.0" size="2"/>
+							</td>
+						</tr>
+						<tr>
+							<td style="width: 150px; vertical-align: top;"><b>Function f(z)=</b></td>
+							<td><input type="text" id="v_f" value="z^3-2.0" size="40"/>&nbsp;<a href="javascript:toggle_f_help();">Help</a>
+							<div id="func_help" style="font-size: 8pt; color: #b1b1b1; display: none;">
+							<p>
+							Expressions should contain positive numbers, the z variable and the following operators: + - * / ^.  
+							They should also use infix notation (e.g. 2+2).  Invalid expressions will cause incorrect images to be displayed (or no image at all).
+							</p>
+							<b>Negative numbers are not currently supported.</b>
+							</div>
+							</td>
+						</tr>
+						<tr>
+							<td style="width: 150px;"><b>Tolerance</b></td>
+							<td><input type="text" id="v_tol" value="0.001" size="10"/></td>
+						</tr>
+						<tr>
+							<td style="width: 150px;"><b>Step Size</b></td>
+							<td><input type="text" id="v_step" value="0.000001" size="10"/></td>
+						</tr>
+						<tr>
+							<td style="width: 150px;"><b>Max Iterations</b></td>
+							<td><input type="text" id="v_max_it" value="20" size="10"/></td>
+						</tr>
+						<tr>
+							<td style="width: 150px;"><b>Threads</b></td>
+							<td>
+								<select id="v_num_threads" onchange="javascript:num_threads = parseInt(this.value);">
+									<option value="1">Single - 1 thread</option>
+									<option selected value="2">Multi - 2 threads</option>
+									<option value="3">Multi - 3 threads</option>
+									<option value="4">Multi - 4 threads</option>
+								</select>
+							</td>
+						</tr>
+						<tr>
+							<td style="width: 150px;"><b>Quality</b></td>
+							<td>
+								<select id="v_qual" onchange="javascript:img_qual = parseInt(this.value); document.getElementById('warning-message').style.display = (img_qual==2049 ? '':'none')">
+									<option value="128">Very Low - 128x128px</option>
+									<option value="512">Low - 512x512px</option>
+									<option selected value="768">Medium - 768x768px</option>
+									<option value="1024">High - 1024x1024px</option>
+									<option value="2048">Very High - 2048x2048px</option>
+								</select>
+							</td>
+						</tr>
+						<tr>
+							<td style="width: 150px;"><b>Colour Method</b></td>
+							<td>
+								<select id="v_col_meth" onchange="javascript:col_method = this.value;">
+									<option value="multi-ld">Multi, Light to Dark</option>
+									<option value="multi-dl">Multi, Dark to Light</option>
+									<option value="multi">Multi, no gradient</option>
+									<option value="single-ld">Single, Light to Dark</option>
+									<option value="single-dl">Single, Dark to Light</option>
+								</select>
+							</td>
+						</tr>
+						<tr>
+							<td style="width: 150px; vertical-align: top;"><b>Root Colours</b></td>
+							<td>
+								<div id="colour_picker"></div>
+							</td>
+						</tr>
+						<!--
+						<tr>
+							<td style="width: 150px; vertical-align: top;"><b>'Dark' Colour</b></td>
+							<td>
+								
+							</td>
+						</tr>
+						<tr>
+							<td style="width: 150px; vertical-align: top;"><b>Zero Colour</b></td>
+							<td>
+								
+							</td>
+						</tr>
+						-->
+					</table>
+					<br/>
+					<input type="button" id="gen_button" value="Generate" onclick="drawf();"/>&nbsp;
+					<input type="button" id="rec_button" value="Re-Colour" onclick="recolour();" />
+					<p>
+					<b>Generate</b> runs the algorithm to create the Fractal data, use this if you have altered the complex plane, the function or the number of iterations used.
+					<br/>
+					<b>Re-Colour</b> re-colours the existing image, use this if you have changed the colours or the colouring method.
+					</p>
+					<i>Richard Kendall, June 2012</i><br />
+					<a href="http://www.richardjameskendall.com/">www.richardjameskendall.com</a>
+					<!--<a href="javascript:testf();">test</a>-->
+				</td>
+			</tr>
+		</table>
+		<br/>
+		<a href="javascript:toggle_debug();"><b>Debug:</b></a>
+		<pre id="debug_out" style="display: none;"></pre>
+		<script type="text/javascript">
+		var real_mn = -2.0;							// lhs of complex plane
+		var real_mx = 2.0;							// rhs of complex plane
+		var im_mn = -2.0;							// bottom of complex plane
+		var im_mx = 2.0;							// top of complex plane
+		var mx_it = 20;								// bailout iterations
+		var tolerance = 0.001;						// max allowable distance from a root
+		var step_size = 0.000001;					// step size per iteration of newton's method
+
+		var fdata = new Array();					// cache for fractal data
+		var roots = new Array();
+
+		var colours = new Array();					// root colours that are available to the fractal algorithm
+		colours[0] = new rgbcol(255,127,0);
+		colours[1] = new rgbcol(255,218,0);
+		colours[2] = new rgbcol(20,53,173);
+		
+		var dark_colour = new rgbcol(0,0,0);		// colour for dark areas
+		var zero_colour = new rgbcol(255,0,0);		// colour for areas which converge on zero
+
+		var c;										// drawing canvas
+		var ctx;									// 2d drawing context
+		var w;										// width of the canvas
+		var h;										// height of the canvas
+		var col_method;								// colouring method
+		var pf_func;								// postfix representation of function
+		var cm_func;								// js compiled function (for eval)
+		var num_threads;							// number of threads
+		var f_roots;								// array to hold roots
+		var start_ts;								// start timestamp
+		var end_ts;									// end timestamp
+		var thread_cc;								// thread completion counter
+		var zoom_mode;								// current zoom state
+		var img_qual;								// image quality
+		
+		var start_x;								// starting x coord for zooming
+		var start_y;								// ending y coord for zooming
+		
+		// web workers
+		var frac_workers = Array();
+
+		function zoomer(event) {
+			if(zoom_mode == 0) {
+				zoom_md(event);
+				zoom_mode = 1;
+			} else {
+				zoom_mu(event);
+				zoom_mode = 0;
+			}
+		}
+		
+		function zoom_md(event) {
+			var img = document.getElementById("display_img");
+			var img_pos = get_el_pos(img);
+			var m_xy = get_true_mouse_xy(event);
+			var x = m_xy.x - img_pos.left;
+			var y = m_xy.y - img_pos.top;
+			start_x = x;
+			start_y = y;
+		}
+		
+		function zoom_mu(event) {
+			var img = document.getElementById("display_img");
+			var img_pos = get_el_pos(img);
+			var m_xy = get_true_mouse_xy(event);
+			var x = m_xy.x - img_pos.left;
+			var y = m_xy.y - img_pos.top;
+			
+			var w_part = (real_mx - real_mn) / img.width;
+			var y_part = (im_mx - im_mn) / img.height;
+			
+			var x_diff = x - start_x;
+			var y_diff = y - start_y;
+			var offset;
+			
+			if(x_diff > y_diff) {
+				offset = x_diff;
+			} else {
+				offset = y_diff;
+			}
+			
+			var real_mn_n = real_mn + (w_part * start_x);
+			var real_mx_n = real_mn + (w_part * (start_x+offset));
+			
+			var im_mn_n = im_mn + (y_part * start_y);
+			var im_mx_n = im_mn + (y_part * (start_y+offset));
+			
+			var t_mn_x = document.getElementById("v_min_x");
+			var t_mx_x = document.getElementById("v_max_x");
+			var t_mn_y = document.getElementById("v_min_y");
+			var t_mx_y = document.getElementById("v_max_y");
+			
+			t_mn_x.value = real_mn_n;
+			t_mx_x.value = real_mx_n;
+			t_mn_y.value = im_mn_n;
+			t_mx_y.value = im_mx_n;
+		}
+		
+		function get_el_pos(el) {
+			var x = 0;
+			var y = 0;
+			while(!(el instanceof HTMLBodyElement)) {
+				x += el.offsetLeft;
+				y += el.offsetTop;
+				el = el.offsetParent;
+			}
+			return {left: x, top: y};
+		}
+		
+		function get_true_mouse_xy(e) {
+			var posx = 0;
+			var posy = 0;
+			if (!e) var e = window.event;
+			if(e.pageX || e.pageY) {
+				posx = e.pageX;
+				posy = e.pageY;
+			} else if(e.clientX || e.clientY) {
+				posx = e.clientX + document.body.scrollLeft + document.documentElement.scrollLeft;
+				posy = e.clientY + document.body.scrollTop + document.documentElement.scrollTop;
+			}
+			return {x: posx, y: posy};
+		}
+		
+		function toggle_f_help() {
+			var h = document.getElementById("func_help");
+			if(h.style.display == "none") {
+				h.style.display = "";
+			} else {
+				h.style.display = "none";
+			}
+		}
+		
+		function toggle_debug() {
+			var h = document.getElementById("debug_out");
+			if(h.style.display == "none") {
+				h.style.display = "";
+			} else {
+				h.style.display = "none";
+			}
+		}
+		
+		function clear_debug() {
+			document.getElementById("debug_out").innerText = "";
+		}
+		
+		function debug_write(text) {
+			document.getElementById("debug_out").innerText += text + "\n";
+		}
+		
+		function testf() {
+			var it = 10;
+			var root = 1;
+			var r = (it << 16) | root;
+			
+			alert(r & 65535);
+			
+			
+		}
+		
+		function setup() {
+			zoom_mode = 0;
+			real_mn = -2.0;							
+			real_mx = 2.0;							
+			im_mn = -2.0;							
+			im_mx = 2.0;						
+			mx_it = 20;	
+			tolerance = 0.001;
+			step_size = 0.000001;
+			col_method = "multi-ld";
+			num_threads = 2;
+			img_qual = 768;
+			var img = document.getElementById("display_img");
+			//img.addEventListener("mouseup", zoom_mu);
+			//img.addEventListener("mousedown", zoom_md);
+			img.addEventListener("click", zoomer);
+			c = document.getElementById("cvs");
+			ctx = c.getContext("2d");
+			w = c.width;				
+			h = c.height;				
+			draw_colour_table();
+			drawf();
+		}
+
+		function update_settings() {
+			var t_mx_it = document.getElementById("v_max_it").value;
+			if(isNumber(t_mx_it)) {
+				if(t_mx_it>0) {
+					mx_it = parseInt(t_mx_it);
+				}
+			}
+			var t_mn_x = document.getElementById("v_min_x").value;
+			var t_mx_x = document.getElementById("v_max_x").value;
+			var t_mn_y = document.getElementById("v_min_y").value;
+			var t_mx_y = document.getElementById("v_max_y").value;
+			if(isNumber(t_mn_x)) {
+				real_mn = parseFloat(t_mn_x);
+			}
+			if(isNumber(t_mx_x)) {
+				real_mx = parseFloat(t_mx_x);
+			}
+			if(isNumber(t_mn_y)) {
+				im_mn = parseFloat(t_mn_y);
+			}
+			if(isNumber(t_mx_y)) {
+				im_mx = parseFloat(t_mx_y);
+			}
+			var t_tol = document.getElementById("v_tol").value;
+			var t_step = document.getElementById("v_step").value;
+			if(isNumber(t_tol)) {
+				tolerance = parseFloat(t_tol);
+			}
+			if(isNumber(t_step)) {
+				step_size = parseFloat(t_step);
+			}
+			w = img_qual;
+			h = img_qual;
+			c.width = w;
+			c.height = h;
+			//alert(w + " x " + h);
+		}
+		
+		function isNumber(n) {
+			return !isNaN(parseFloat(n)) && isFinite(n);
+		}
+
+		function update_colour(event) {
+			var el = event.target.id;
+			var el_bits = el.split("_");
+			var idx = el_bits[2];
+			var red = document.getElementById("col_r_" + idx).value;
+			var green = document.getElementById("col_g_" + idx).value;
+			var blue = document.getElementById("col_b_" + idx).value;
+			
+			// validate
+			if(isNumber(red) && isNumber(green) && isNumber(blue)) {
+				if(red >= 0 && red <= 255 && green >= 0 && green <= 255 && blue >= 0 && blue <= 255) {
+					// is this a new colour?
+					if(idx == colours.length) {
+						var t_col = new rgbcol(parseInt(red),parseInt(green),parseInt(blue));
+						var cv = document.getElementById("col_view_" + idx);
+						cv.style.backgroundColor = t_col.to_hex();
+					} else {
+						// update array entry
+						colours[idx].set_all(parseInt(red),parseInt(green),parseInt(blue));
+						var cv = document.getElementById("col_view_" + idx);
+						cv.style.backgroundColor = colours[idx].to_hex();
+					}
+				}
+			}
+		}
+
+		function add_colour() {
+			var idx = colours.length;
+			var red = document.getElementById("col_r_" + idx).value;
+			var green = document.getElementById("col_g_" + idx).value;
+			var blue = document.getElementById("col_b_" + idx).value;
+			if(isNumber(red) && isNumber(green) && isNumber(blue)) {
+				if(red >= 0 && red <= 255 && green >= 0 && green <= 255 && blue >= 0 && blue <= 255) {
+					var t_col = new rgbcol(parseInt(red),parseInt(green),parseInt(blue));
+					colours.push(t_col);
+				}
+			}
+			
+			draw_colour_table();
+		}
+
+		function delete_colour(event) {
+			var el = event.target.id;
+			var el_bits = el.split("_");
+			var idx = parseInt(el_bits[2]);
+			var nc = new Array();
+			for(var i = 0;i<colours.length;i++) {
+				if(i != idx) {
+					nc.push(colours[i]);
+				}
+			}
+			colours = nc;
+			
+			draw_colour_table();
+		}
+
+		function draw_colour_table() {
+			var html = "";
+			html = "<table>";
+			var i = 0;
+			for(i = 0;i<colours.length;i++) {
+				html += "<tr><td id='col_view_" + i + "' style='width: 30px; height: 30px; background-color: " + colours[i].to_hex() + ";'>&nbsp;</td><td>";
+				html += "R: <input type='text' size='1' id='col_r_" + i + "' value='" + colours[i].get_r() + "'/>&nbsp;";
+				html += "G: <input type='text' size='1' id='col_g_" + i + "' value='" + colours[i].get_g() + "'/>&nbsp;";
+				html += "B: <input type='text' size='1' id='col_b_" + i + "' value='" + colours[i].get_b() + "'/>&nbsp;";
+				html += "<input type='button' value='X' id='col_del_" + i + "' />";
+				html += "</td></tr>";
+			}
+
+			html += "<tr><td id='col_view_" + i + "' style='width: 30px; height: 30px;'>&nbsp;</td><td>";
+			html += "R: <input type='text' size='1' id='col_r_" + i + "' value=''/>&nbsp;";
+			html += "G: <input type='text' size='1' id='col_g_" + i + "' value=''/>&nbsp;";
+			html += "B: <input type='text' size='1' id='col_b_" + i + "' value=''/>&nbsp;";
+			html += "<input id='add_col' type='button' value='Add' />";
+			html += "</td></tr>";
+			html += "</table>";
+			
+			var ct = document.getElementById("colour_picker");
+			ct.innerHTML = html;
+			
+			for(var j = 0;j<i+1;j++) {
+				var cr = document.getElementById("col_r_" + j);
+				var cg = document.getElementById("col_g_" + j);
+				var cb = document.getElementById("col_b_" + j);
+				cr.addEventListener("keyup", update_colour, false);
+				cg.addEventListener("keyup", update_colour, false);
+				cb.addEventListener("keyup", update_colour, false);
+				if(j != colours.length) {
+					var dc = document.getElementById("col_del_" + j);
+					dc.addEventListener("click", delete_colour, false);
+				}
+			}
+			
+			var ab = document.getElementById("add_col");
+			ab.addEventListener("click", add_colour, false);
+		}
+
+		function drawf() {
+			var gb = document.getElementById("gen_button");
+			var rb = document.getElementById("rec_button");
+			gb.value = "Generating..."
+			gb.disabled = "disabled";
+			rb.disabled = "disabled";
+		
+			clear_debug();
+			debug_write("Starting\nReading in settings...");
+			update_settings();
+			
+			// validate syntax
+			try {
+				pf_func = parse_input_function();
+				debug_write("Input function parsed:\t\t" + pf_func);
+				
+				cm_func = compile(pf_func);
+				debug_write("Input function compiled:\t" + cm_func);
+				
+				start_ts = new Date().getTime();
+				debug_write("\nStarting calculation TS:\t" + start_ts + " with " + num_threads + " thread(s)");
+				//var arg = [cm_func, w, h, real_mn, real_mx, im_mn, im_mx, mx_it, tolerance, step_size];
+				//frac_worker.postMessage(arg);
+				
+				var stripe_h = h / num_threads;
+				frac_workers = new Array();
+				thread_cc = 0;
+				
+				var img = document.getElementById("display_img");
+				img.src="rendering.gif";
+				img.width = 25;
+				img.height = 25;
+				img.style.padding = "242.5px";
+				
+				for(var i = 0;i < num_threads;i++) {
+					frac_workers[i] = new Worker("fractal_worker_part.js");
+					frac_workers[i].addEventListener("message", assemble_fractal_data, false);
+					//alert(String(cm_func));
+					var arg = [String(cm_func), w, h, real_mn, real_mx, im_mn, im_mx, mx_it, tolerance, step_size, 0, stripe_h*i, w, stripe_h*(i+1)];
+					frac_workers[i].postMessage(arg);
+				}
+				
+			} catch(err) {
+				if(err == "Stack is empty") {
+					alert("Syntax error in function.");
+					gb.value = "Generate"
+					gb.disabled = "";
+					rb.disabled = "";
+				}
+			}
+		}
+		
+		function assemble_fractal_data(e) {
+			var toffset = e.data[3]*w;
+			debug_write("\tThread " + e.data[3]/(h/num_threads) + " completed");
+			/* 
+			TODO: make the copying here more efficient
+			*/
+			for(var i = 0;i<((h/num_threads)*w);i++) {
+				fdata[toffset+i] = e.data[0][i];
+			}
+			
+			roots[e.data[3]/(h/num_threads)] = e.data[1];
+			
+			thread_cc++;
+			
+			frac_workers[e.data[3]/(h/num_threads)].terminate();
+			frac_workers[e.data[3]/(h/num_threads)] = 0;
+			
+			if(thread_cc == num_threads) {
+				end_ts = new Date().getTime();
+				var gb = document.getElementById("gen_button");
+				var rb = document.getElementById("rec_button");
+				gb.value = "Generate"
+				gb.disabled = "";
+				rb.disabled = "";
+				debug_write("Completed calculation TS:\t" + end_ts + "; duration: " + (end_ts-start_ts) + "ms");
+				var img = render_fractal();
+				ctx.putImageData(img,0,0)
+				//debug_write("image placed on canvas");
+				var img = document.getElementById("display_img");
+				img.src = c.toDataURL();
+				//debug_write("image placed in img");
+				img.style.padding = "0px";
+				img.width = 512;
+				img.height = 512;
+				ctx.clearRect(0,0,w,h);
+				debug_write("\nRender complete.");
+				//fdata = new Array();
+			}
+		}
+		
+		function recolour() {
+			var img = render_fractal();
+			ctx.putImageData(img,0,0)
+			document.getElementById("display_img").src = c.toDataURL();
+		}
+
+		function render_fractal() {
+			var img = ctx.createImageData(w,h);
+			//var roots = new Array();
+			
+			var root_alignment = new Array();
+			
+			// iterate through each thread
+			for(var i = 0;i<roots.length;i++) {
+				root_alignment[i] = new Array();
+				if(i == 0) {
+					// first results determines colour order
+					for(var j = 0;j<roots[0].length;j++) {
+						root_alignment[i][j] = j;
+						//debug_write("t " + i + "; root: " + j + "; pos: " + j);
+					}
+				} else {
+					// iterate through all the roots
+					for(var j = 0;j<roots[i].length;j++) {
+						var tr = new complex(roots[i][j][0], roots[i][j][1]);
+						var r = -1;
+						// compare them to the baseline roots
+						for(var k = 0;k<roots[0].length;k++) {
+							var t0 = new complex(roots[0][k][0], roots[0][k][1]);
+							if(tr.sub(t0).mod() < tolerance) {
+								r = k;
+								break;
+							}
+						}
+						
+						//debug_write("t " + i + "; root: " + j + "; pos: " + r);
+						root_alignment[i][j] = r;
+					}
+					
+				}
+			}
+			
+			var y = 0;
+			var x = 0;
+			
+			for(var i = 0;i<(w*h);i++) {
+				// determine thread number
+				// determine thread number
+				var tn = Math.floor(Math.floor(i/w)/(h/num_threads));
+				var r = root_alignment[tn][fdata[i] & 65535];
+				var it = (fdata[i] >> 16) & 65535;
+				
+				x = i % w;
+
+				if(col_method == "multi-ld") {
+					if(r == undefined) {
+						//var col = zero_colour;
+						//set_pixel(img,x,y,col.get_r(), col.get_g(), col.get_b(),255);
+						set_pixel(img,x,y,0, 0, 0,255);
+					} else {
+						var col = colours[r % colours.length];
+						col = col.alter_intensity(it/20,1);
+						set_pixel(img,x,y,col.get_r(), col.get_g(), col.get_b(),255);
+					}
+				} else {
+					if(col_method == "multi-dl") {
+						if(r == undefined) {
+							//var col = zero_colour.alter_intensity(it/20,1);
+							//set_pixel(img,x,y,col.get_r(), col.get_g(), col.get_b(),255);
+							set_pixel(img,x,y,0, 0, 0,255);
+						} else {
+							var col = colours[r % colours.length];
+							col = col.alter_intensity(it/20,0);
+							set_pixel(img,x,y,col.get_r(), col.get_g(), col.get_b(),255);
+						}
+					} else {
+						if(col_method == "multi") {
+							if(r == undefined) {
+								set_pixel(img,x,y,255, 255, 255,255);
+							} else {
+								var col = colours[r % colours.length];
+								set_pixel(img,x,y,col.get_r(), col.get_g(), col.get_b(),255);
+							}
+						} else {
+							if(col_method == "single-ld") {
+								var col = colours[0];
+								col = col.alter_intensity(it/20,1);
+								set_pixel(img,x,y,col.get_r(), col.get_g(), col.get_b(),255);
+							} else {
+								if(col_method == "single-dl") {
+									var col = colours[0];
+									col = col.alter_intensity(it/20,0);
+									set_pixel(img,x,y,col.get_r(), col.get_g(), col.get_b(),255);
+								} else {
+									// more colouring methods here...
+								}
+							}
+						}
+					}
+				}
+				if(i != 0 && i % w == 0) {
+					y++;
+				}
+			}
+			
+			return img;
+		}
+		
+		function parse_input_function() {
+			// first convert infix to postfix...
+			var func = document.getElementById("v_f").value;
+			var res = "";
+			var s = new stack();
+			for(var i = 0;i<func.length;i++) {
+				var t = func.substr(i,1);
+				if(t == "z" || t == "Z") {
+					res += t;
+				} else {
+					if(isNumber(t)) {
+						// get all the numbers
+						var tres = t;
+						var j = 1;
+						while(isNumber(func.substr(i+j,1)) || func.substr(i+j,1) == ".") {
+							tres += func.substr(i+j,1);
+							j++;
+						}
+						i += (j-1);
+						res += "[" + tres + "]";
+					} else {
+						// check to see if there is anything on the stack
+						var found = 0;
+						while(found == 0) {
+							if(s.count() == 0) {
+								found = 1;
+							} else {
+								var top = s.peek();
+								if(op_prec(top) <= op_prec(t)) {
+									// pop the op off the stack and add to the res str
+									res += s.pop();
+								} else {
+									found = 1;
+								}
+							}
+						}
+						s.push(t);
+					}
+				}
+			}
+			// get all ops off the stack
+			while(s.count() > 0) {
+				res += s.pop();
+			}
+			
+			//alert(res);
+			return res;
+			//alert(f_v(new complex(0.1,0.2), pf_func).to_str());
+		}
+		
+		function f_v(z, func) {
+			var s = new stack();
+			for(var i = 0;i < func.length;i++) {
+				var t = func.substr(i,1);
+				if(t == "z" ||t == "Z") {
+					s.push(z);
+					//alert("pushed z");
+				} else {
+					if(t == "[") {
+						// find the whole number...
+						var num = "";
+						var j = 1;
+						while(func.substr(i+j,1) != "]") {
+							num += func.substr(i+j,1);
+							j++;
+						}
+						i += j;
+						s.push(parseFloat(num));
+						//alert("pushed number: " + num);
+					} else {
+						//alert("op found: " + t);
+						// power
+						if(t == "^") {
+							var rhs = s.pop();
+							var lhs = s.pop();
+							if(lhs instanceof complex) {
+								s.push(lhs.pow(parseFloat(rhs)));
+							} else {
+								if(rhs instanceof complex) {
+									s.push(rhs.pow(parseFloat(lhs)));
+								} else {
+									s.push(Math.pow(parseFloat(lhs),parseFloat(rhs)));
+								}
+							}
+						} else {
+							// multiplication
+							if(t == "*") {
+								var rhs = s.pop();
+								var lhs = s.pop();
+								if(lhs instanceof complex) {
+									if(rhs instanceof complex) {
+										s.push(lhs.mult(rhs));
+									} else {
+										s.push(lhs.mult_n(parseFloat(rhs)));
+									}
+								} else {
+									if(rhs instanceof complex) {
+										s.push(rhs.mult_n(parseFloat(lhs)));
+									} else {
+										s.push(parseFloat(lhs)*parseFloat(rhs));
+									}
+								}
+							} else {
+								// subtraction
+								if(t == "-") {
+									var rhs = s.pop();
+									var lhs = s.pop();
+									if(lhs instanceof complex) {
+										if(rhs instanceof complex) {
+											s.push(lhs.sub(rhs));
+										} else {
+											s.push(lhs.sub_n(parseFloat(rhs)));
+										}
+									} else {
+										if(rhs instanceof complex) {
+											s.push(rhs.sub_n(parseFloat(lhs)));
+										} else {
+											s.push(parseFloat(lhs)-parseFloat(rhs));
+										}
+									}
+								} else {
+									// addition
+									if(t == "+") {
+										var rhs = s.pop();
+										var lhs = s.pop();
+										if(lhs instanceof complex) {
+											if(rhs instanceof complex) {
+												s.push(lhs.add(rhs));
+											} else {
+												s.push(lhs.add_n(parseFloat(rhs)));
+											}
+										} else {
+											if(rhs instanceof complex) {
+												s.push(rhs.add_n(parseFloat(lhs)));
+											} else {
+												s.push(parseFloat(lhs)+parseFloat(rhs));
+											}
+										}
+									} else {
+										// division
+										if(t == "/" || t == "\\") {
+											var rhs = s.pop();
+											var lhs = s.pop();
+											if(lhs instanceof complex) {
+												if(rhs instanceof complex) {
+													s.push(lhs.div_c(rhs));
+												} else {
+													s.push(lhs.div_n(parseFloat(rhs)));
+												}
+											} else {
+												if(rhs instanceof complex) {
+													s.push(rhs.div_n(parseFloat(lhs)));
+												} else {
+													s.push(parseFloat(lhs)/parseFloat(rhs));
+												}
+											}
+										} else {
+											// other operators
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			//alert(s.peek().to_str());
+			
+			return s.pop();
+		}
+		
+		function compile(func) {
+			var s = new stack();
+			for(var i = 0;i < func.length;i++) {
+				var t = func.substr(i,1);
+				if(t == "z" ||t == "Z") {
+					//s.push(z);
+					s.push(new String("z"));
+					//alert("pushed z");
+				} else {
+					if(t == "[") {
+						// find the whole number...
+						var num = "";
+						var j = 1;
+						while(func.substr(i+j,1) != "]") {
+							num += func.substr(i+j,1);
+							j++;
+						}
+						i += j;
+						s.push(parseFloat(num));
+						//alert("pushed number: " + num);
+					} else {
+						//alert("op found: " + t);
+						// power
+						if(t == "^") {
+							var rhs = s.pop();
+							var lhs = s.pop();
+							if(lhs instanceof String && lhs.substr(0,1) == "z") {
+								//s.push(lhs.pow(parseFloat(rhs)));
+								s.push(new String(lhs + ".pow(" + parseFloat(rhs) + ")"));
+							} else {
+								if(rhs instanceof String && rhs.substr(0,1) == "z") {
+									//s.push(rhs.pow(parseFloat(lhs)));
+									s.push(new String(rhs + ".pow(" + parseFloat(lhs) + ")"));
+								} else {
+									//s.push(Math.pow(parseFloat(lhs),parseFloat(rhs)));
+									s.push(new String("Math.pow(" + parseFloat(lhs) + "," + parseFloat(rhs) + ")"));
+								}
+							}
+						} else {
+							// multiplication
+							if(t == "*") {
+								var rhs = s.pop();
+								var lhs = s.pop();
+								if(lhs instanceof String && lhs.substr(0,1) == "z") {
+									if(rhs instanceof String && rhs.substr(0,1) == "z") {
+										//s.push(lhs.mult(rhs));
+										s.push(new String(lhs + ".mult(" + rhs + ")"));
+									} else {
+										//s.push(lhs.mult_n(parseFloat(rhs)));
+										s.push(new String(lhs + ".mult_n(" + rhs + ")"));
+									}
+								} else {
+									if(rhs instanceof String && rhs.substr(0,1) == "z") {
+										//s.push(rhs.mult_n(parseFloat(lhs)));
+										s.push(new String(rhs + ".mult_n(" + lhs + ")"));
+									} else {
+										//s.push(parseFloat(lhs)*parseFloat(rhs));
+										s.push(new String(lhs + "*" + rhs));
+									}
+								}
+							} else {
+								// subtraction
+								if(t == "-") {
+									var rhs = s.pop();
+									var lhs = s.pop();
+									if(lhs instanceof String && lhs.substr(0,1) == "z") {
+										if(rhs instanceof String && rhs.substr(0,1) == "z") {
+											//s.push(lhs.sub(rhs));
+											s.push(new String(lhs + ".sub(" + rhs + ")"));
+										} else {
+											//s.push(lhs.sub_n(parseFloat(rhs)));
+											s.push(new String(lhs + ".sub_n(" + rhs + ")"));
+										}
+									} else {
+										if(rhs instanceof String && rhs.substr(0,1) == "z") {
+											//s.push(rhs.sub_n(parseFloat(lhs)));
+											s.push(new String(rhs + ".sub_n(" + lhs + ")"));
+										} else {
+											//s.push(parseFloat(lhs)-parseFloat(rhs));
+											s.push(new String(lhs + "-" + rhs));
+										}
+									}
+								} else {
+									// addition
+									if(t == "+") {
+										var rhs = s.pop();
+										var lhs = s.pop();
+										if(lhs instanceof String && lhs.substr(0,1) == "z") {
+											if(rhs instanceof String && rhs.substr(0,1) == "z") {
+												//s.push(lhs.sub(rhs));
+												s.push(new String(lhs + ".add(" + rhs + ")"));
+											} else {
+												//s.push(lhs.sub_n(parseFloat(rhs)));
+												s.push(new String(lhs + ".add_n(" + rhs + ")"));
+											}
+										} else {
+											if(rhs instanceof String && rhs.substr(0,1) == "z") {
+												//s.push(rhs.sub_n(parseFloat(lhs)));
+												s.push(new String(rhs + ".add_n(" + lhs + ")"));
+											} else {
+												//s.push(parseFloat(lhs)-parseFloat(rhs));
+												s.push(new String(lhs + "+" + rhs));
+											}
+										}
+									} else {
+										// division
+										if(t == "/" || t == "\\") {
+											var rhs = s.pop();
+											var lhs = s.pop();
+											if(lhs instanceof String && lhs.substr(0,1) == "z") {
+												if(rhs instanceof String && rhs.substr(0,1) == "z") {
+													//s.push(lhs.div_c(rhs));
+													s.push(new String(lhs + ".div_c(" + rhs + ")"));
+												} else {
+													//s.push(lhs.div_n(parseFloat(rhs)));
+													s.push(new String(lhs + ".div_n(" + rhs + ")"));
+												}
+											} else {
+												if(rhs instanceof String && rhs.substr(0,1) == "z") {
+													//s.push(rhs.div_n(parseFloat(lhs)));
+													s.push(new String(rhs + ".div_n(" + lhs + ")"));
+												} else {
+													//s.push(parseFloat(lhs)/parseFloat(rhs));
+													s.push(new String(lhs + "/" + rhs));
+												}
+											}
+										} else {
+											// other operators
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			//alert(s.peek().to_str());
+			
+			return s.pop();
+		}
+		
+		function op_prec(t) {
+			if(t == "*" || t == "/" || t == "^" || t == "\\") {
+				return 0;
+			} else {
+				if(t == "+" || t == "-") {
+					return 1;
+				} else {
+					
+				}
+			}
+		}
+		
+		function set_pixel(imageData, x, y, r, g, b, a) {
+			index = (x + y * imageData.width) * 4;
+			imageData.data[index+0] = r;
+			imageData.data[index+1] = g;
+			imageData.data[index+2] = b;
+			imageData.data[index+3] = a;
+		}
+		</script>
+	</body>
+</html>
